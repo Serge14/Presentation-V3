@@ -1,39 +1,119 @@
 
 library(data.table)
-df = fread("/home/sergiy/Documents/Work/Nutricia/Rework/201907/df.csv")
-
-brands.to.show = c("Nutrilon", "Milupa", "Malysh Istr")
-
-df = df[Form !- "Liquid" & PS0 == "IMF"]
-dt = dcast.data.table(df, Brand ~ Ynb + Mnb, 
-                      value.var = "VolumeC", 
-                      fun.aggregate = sum)
-
-n = dim(df)[2]
-
-df[, P3M := rowSums(.SD, na.rm = TRUE), .SDcols = (n - 2):n]
-df[, P6M := rowSums(.SD, na.rm = TRUE), .SDcols = (n - 5):n]
-df[, P12M := rowSums(.SD, na.rm = TRUE), .SDcols = (n - 11):n]
-
-df[, P3MPY := rowSums(.SD, na.rm = TRUE), .SDcols = (n - 14):(n - 12)]
-df[, P6MPY := rowSums(.SD, na.rm = TRUE), .SDcols = (n - 17):(n - 12)]
-df[, P12MPY := rowSums(.SD, na.rm = TRUE), .SDcols = (n - 23):(n - 12)]
+library(officer)
+library(flextable)
 
 
 
+extract.brands.data = function(df, selection, measure, brands.to.show) {
+  measure = paste0(measure, "C")
+  df = df[eval(selection)]
+  
+  df = dcast.data.table(df,
+                        Brand ~ Ynb + Mnb,
+                        value.var = measure,
+                        fun.aggregate = sum)
+  
+  n = dim(df)[2]
+  
+  df[, P3M := rowSums(.SD, na.rm = TRUE), .SDcols = (n - 2):n]
+  df[, P6M := rowSums(.SD, na.rm = TRUE), .SDcols = (n - 5):n]
+  df[, P12M := rowSums(.SD, na.rm = TRUE), .SDcols = (n - 11):n]
+  
+  df[, P3MPY := rowSums(.SD, na.rm = TRUE), .SDcols = (n - 14):(n - 12)]
+  df[, P6MPY := rowSums(.SD, na.rm = TRUE), .SDcols = (n - 17):(n - 12)]
+  df[, P12MPY := rowSums(.SD, na.rm = TRUE), .SDcols = (n - 23):(n - 12)]
+  
+  # MS
+  df[, names(df)[2:length(df)] := lapply(.SD, function(x)
+    100 * x / sum(x)),
+    .SDcols = 2:length(df)]
+  
+  df = df[Brand %in% brands.to.show]
+  
+  df[, `:=`(
+    P3M.delta.bps = (P3M - P3MPY) * 100,
+    P6M.delta.bps = (P6M - P6MPY) * 100,
+    P12M.delta.bps = (P12M - P12MPY) * 100
+  )]
+  
+  df[, c(2:n, (n + 4):(n + 6)) := NULL]
+  
+  df = df[order(-Brand)]
+  
+  return(df)
+  
+}
 
-dict.months = data.table(Mnb = as.character(1:12),
-                         month.name = c("Jan", "Feb", "Mar", "Apr", "May", "Jun",
-                                        "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"))
+make.flextable = function(df) {
+  
+  ft = flextable(df)
+  
+  # Add header, perhaps need to be universal for both tables
+  ft = add_header_row(
+    ft,
+    top = TRUE,
+    values = c("Brand", "Danone Market Share, %", "Changes, bps"),
+    colwidths = c(1, 3, 3)
+  )
+  
+  # Merge header
+  ft = merge_at(ft, i = 1:2, j = 1, part = "header")
+  
+  # Assign labels to the header
+  ft <- set_header_labels(
+    ft,
+    Brand = "Brand",
+    P3M = "P3M",
+    P6M = "P3M",
+    P12M = "P12M",
+    P3M.delta.bps = "P3M",
+    P6M.delta.bps = "P6M",
+    P12M.delta.bps = "P12M"
+  )
+  
+  # Theme
+  ft = theme_box(ft)
+  
+  # Color and fonsize of the header
+  ft <-  bg(ft, bg = "#D3D3D3", part = "header")
+  ft = fontsize(ft, size = 11, part = "header")
+  
+  # Alignment
+  ft =  align(ft,
+    j = c("P3M", "P6M", "P12M", 
+          "P3M.delta.bps", "P6M.delta.bps", "P12M.delta.bps"),
+    align = "center",
+    part = "all"
+  )
+  
+  ft <- color(ft, ~ P3M.delta.bps < 0, ~ P3M.delta.bps, color = "red")
+  ft <- color(ft, ~ P6M.delta.bps < 0, ~ P6M.delta.bps, color = "red")
+  ft <- color(ft, ~ P12M.delta.bps < 0, ~ P12M.delta.bps, color = "red")
+  
+  ft <- color(ft, ~ P3M.delta.bps >= 0, ~ P3M.delta.bps, color = "#3895D3")
+  ft <- color(ft, ~ P6M.delta.bps >= 0, ~ P6M.delta.bps, color = "#3895D3")
+  ft <- color(ft, ~ P12M.delta.bps >= 0, ~ P12M.delta.bps, color = "#3895D3")
+  
+  # Digits format
+  ft = colformat_num(ft,  c("P3M", "P6M", "P12M", 
+                            "P3M.delta.bps", "P6M.delta.bps", "P12M.delta.bps"),
+                     digits = 1)
+  
+   # Width
+  ft <- width(ft, j = ~ Brand, width = 1.5)
+  
+  # Border
+  ft <- vline(
+    ft,
+    j = c("P3M", "P6M", "P3M.delta.bps", "P6M.delta.bps"),
+    border = fp_border(color = "black", style = "dotted"),
+    part = "all"
+  )
+  
+  return(ft)
+}
 
-dictColors = fread("/home/sergiy/Documents/Work/Nutricia/Scripts/Presentation-V2/dictColor.csv")
-dictColors = dictColors[Color != ""]
-customColors = dictColors$Color
-names(customColors) = dictColors$Name
-
-Month = 7
-Year = 2019
-No.to.show = 6
 
 build.line.chart = function(df, measure, linesToShow, Year, Month) {
   
@@ -123,7 +203,25 @@ build.line.chart = function(df, measure, linesToShow, Year, Month) {
   
 }
 
+dict.months = data.table(Mnb = as.character(1:12),
+                         month.name = c("Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                                        "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"))
 
+dictColors = fread("/home/sergiy/Documents/Work/Nutricia/Scripts/Presentation-V2/dictColor.csv")
+dictColors = dictColors[Color != ""]
+customColors = dictColors$Color
+names(customColors) = dictColors$Name
+
+df = fread("/home/sergiy/Documents/Work/Nutricia/Rework/201907/df.csv")
+
+brands.to.show = c("Nutrilon", "Milupa", "Malysh Istr")
+measure = "Volume"
+
+Month = 7
+Year = 2019
+No.to.show = 6
+
+selection = quote(Form != "Liquid" & PS0 == "IMF")
 
 ppt = ppt %>%
   add_slide(layout = "1_Two Content", master = "Office Theme") %>%
