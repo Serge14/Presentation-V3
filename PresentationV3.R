@@ -3,8 +3,6 @@ library(data.table)
 library(officer)
 library(flextable)
 
-
-
 extract.brands.data = function(df, selection, measure, brands.to.show) {
   measure = paste0(measure, "C")
   df = df[eval(selection)]
@@ -46,12 +44,10 @@ extract.brands.data = function(df, selection, measure, brands.to.show) {
 }
 
 make.flextable = function(df) {
-  
   ft = flextable(df)
   
   # Add header, perhaps need to be universal for both tables
-  ft = add_header_row(
-    ft,
+  ft = add_header_row(ft,
     top = TRUE,
     values = c("Brand", "Danone Market Share, %", "Changes, bps"),
     colwidths = c(1, 3, 3)
@@ -61,8 +57,7 @@ make.flextable = function(df) {
   ft = merge_at(ft, i = 1:2, j = 1, part = "header")
   
   # Assign labels to the header
-  ft <- set_header_labels(
-    ft,
+  ft <- set_header_labels(ft,
     Brand = "Brand",
     P3M = "P3M",
     P6M = "P3M",
@@ -81,37 +76,51 @@ make.flextable = function(df) {
   
   # Alignment
   ft =  align(ft,
-    j = c("P3M", "P6M", "P12M", 
-          "P3M.delta.bps", "P6M.delta.bps", "P12M.delta.bps"),
+    j = c(
+      "P3M",
+      "P6M",
+      "P12M",
+      "P3M.delta.bps",
+      "P6M.delta.bps",
+      "P12M.delta.bps"
+    ),
     align = "center",
     part = "all"
   )
   
-  ft <- color(ft, ~ P3M.delta.bps < 0, ~ P3M.delta.bps, color = "red")
-  ft <- color(ft, ~ P6M.delta.bps < 0, ~ P6M.delta.bps, color = "red")
-  ft <- color(ft, ~ P12M.delta.bps < 0, ~ P12M.delta.bps, color = "red")
+  ft = color(ft, ~ P3M.delta.bps < 0, ~ P3M.delta.bps, color = "red")
+  ft = color(ft, ~ P6M.delta.bps < 0, ~ P6M.delta.bps, color = "red")
+  ft = color(ft, ~ P12M.delta.bps < 0, ~ P12M.delta.bps, color = "red")
   
-  ft <- color(ft, ~ P3M.delta.bps >= 0, ~ P3M.delta.bps, color = "#3895D3")
-  ft <- color(ft, ~ P6M.delta.bps >= 0, ~ P6M.delta.bps, color = "#3895D3")
-  ft <- color(ft, ~ P12M.delta.bps >= 0, ~ P12M.delta.bps, color = "#3895D3")
+  ft = color(ft, ~ P3M.delta.bps >= 0, ~ P3M.delta.bps, color = "#3895D3")
+  ft = color(ft, ~ P6M.delta.bps >= 0, ~ P6M.delta.bps, color = "#3895D3")
+  ft = color(ft, ~ P12M.delta.bps >= 0, ~ P12M.delta.bps, color = "#3895D3")
   
   # Digits format
-  ft = colformat_num(ft,  c("P3M", "P6M", "P12M", 
-                            "P3M.delta.bps", "P6M.delta.bps", "P12M.delta.bps"),
-                     digits = 1)
+  ft = colformat_num(ft,
+    c(
+      "P3M",
+      "P6M",
+      "P12M",
+      "P3M.delta.bps",
+      "P6M.delta.bps",
+      "P12M.delta.bps"
+    ),
+    digits = 1
+  )
   
-   # Width
+  # Width
   ft <- width(ft, j = ~ Brand, width = 1.5)
   
   # Border
-  ft <- vline(
-    ft,
+  ft <- vline(ft,
     j = c("P3M", "P6M", "P3M.delta.bps", "P6M.delta.bps"),
     border = fp_border(color = "black", style = "dotted"),
     part = "all"
   )
   
   return(ft)
+
 }
 
 
@@ -203,6 +212,7 @@ build.line.chart = function(df, measure, linesToShow, Year, Month) {
   
 }
 
+# Dictionaries
 dict.months = data.table(Mnb = as.character(1:12),
                          month.name = c("Jan", "Feb", "Mar", "Apr", "May", "Jun",
                                         "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"))
@@ -212,15 +222,17 @@ dictColors = dictColors[Color != ""]
 customColors = dictColors$Color
 names(customColors) = dictColors$Name
 
+# Dataset
 df = fread("/home/sergiy/Documents/Work/Nutricia/Rework/201907/df.csv")
 
+# Parameters
 brands.to.show = c("Nutrilon", "Milupa", "Malysh Istr")
-measure = "Volume"
 
 Month = 7
 Year = 2019
 No.to.show = 6
 
+measure = "Volume"
 selection = quote(Form != "Liquid" & PS0 == "IMF")
 
 ppt = ppt %>%
