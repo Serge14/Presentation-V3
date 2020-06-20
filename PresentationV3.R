@@ -7,6 +7,7 @@ library(officer)
 library(flextable)
 library(magrittr)
 library(rvg) # vector graphics
+library(patchwork) # combine charts
 
 extract.brands.data = function(df, selection, measure, brands.to.show) {
   measure = paste0(measure, "C")
@@ -123,7 +124,7 @@ make.flextable = function(df, level) {
   ft <- set_header_labels(ft,
     Group = level,
     P3M = "P3M",
-    P6M = "P3M",
+    P6M = "P6M",
     P12M = "P12M",
     P3M.delta.bps = "P3M",
     P6M.delta.bps = "P6M",
@@ -248,9 +249,9 @@ build.line.chart = function(df, selection, measure, linesToShow, Year, Month, ex
   
   df[, c("Ynb", "Mnb") := tstrsplit(variable, "_", fixed=TRUE)][]
   
-  df[dict.months, on = "Mnb", Mnb := i.month.name]                        
+  df[dict.months, on = "Mnb", Period := i.month.name]                        
   
-  df[, Period := paste0(toupper(Mnb), " ", stri_sub(Ynb,-2,-1))][]
+  df[, Period := paste0(toupper(Period), " ", stri_sub(Ynb,-2,-1))][]
   df[Period == "NA .", Period := "."]
   df[Period == "NA ..", Period := ".."]
   
@@ -299,29 +300,314 @@ build.line.chart = function(df, selection, measure, linesToShow, Year, Month, ex
   
 }
 
+build.bar.chart = function(df, selection, measure, 
+                           reporting.Ynb, reporting.Mnb,
+                           exchane.rate, growth.rate){
+  
+  
+  # Check selection
+  
+  if (measure == "Volume") {
+    measure = "VolumeC"
+    exchane.rate = 1
+    y.title = "Volume, mln"
+    color.palette = "#00B0F0"
+    if (selection == 'Form != "Liquid" & PS0 == "IMF"') {
+      growth.rate = growth.imf.volume
+    } else {
+      growth.rate = growth.foods.volume
+    }
+  } else if (measure == "Value") {
+    measure = "ValueC"
+    color.palette = "#0070C0"
+    y.title = "EUR, mln"
+    if (selection == 'Form != "Liquid" & PS0 == "IMF"') {
+      growth.rate = growth.imf.value
+    } else {
+      growth.rate = growth.foods.value
+    }
+  } else {
+    print("Unknown measure!")
+  }
+  
+  # Check Ynb & Mnb
+  
+  if (exists("reporting.Ynb")) {
+    if (is.na(reporting.Ynb) | reporting.Ynb == "") {
+      reporting.Ynb = df[, max(Ynb)]
+    }
+    if (reporting.Ynb > format(Sys.Date(), "%Y")) {
+      print("Year cannot be bigger than current year")
+      print(paste("Ynb =", reporting.Ynb))
+    }
+    if (reporting.Ynb < as.integer(format(Sys.Date(), "%Y")) - 2) {
+      print("Suspicious year")
+      print(paste("Ynb =", reporting.Ynb))
+    }
+    
+  } else {
+    reporting.Ynb = df[, max(Ynb)]
+  }
+  
+  
+  if (exists("reporting.Mnb")) {
+    if (is.na(reporting.Mnb) | reporting.Mnb == "") {
+      reporting.Mnb = df[Ynb == max(Ynb), max(Mnb)]
+    }
+    if (!between(reporting.Mnb, 1, 12, incbounds = TRUE)) {
+      print("Month must be in the range [1, 12]")
+      print(paste("Mnb =", Mnb))
+    }
+    
+  } else {
+    reporting.Mnb = df[Ynb == max(Ynb), max(Mnb)]
+  }
+  
+  
+  df = df[eval(parse(text = selection))]
+  df = df[, .(Sales = sum(get(measure))/1000000/exchane.rate), by = .(Ynb, Mnb)]
+  
+  # Extract right periods
+  df = df[(Ynb >= (reporting.Ynb - 2) & Ynb < reporting.Ynb) | 
+            (Ynb == reporting.Ynb & Mnb <= reporting.Mnb)]
+  
+  df[, Change := shift(Sales, type = "lag", n = 12)]
+  df[, Change := 100*(Sales / Change - 1)]
+  
+  if (reporting.Mnb < 12){
+    df.temp = data.table(Ynb = reporting.Ynb,
+                         Mnb = (reporting.Mnb+1):12,
+                         NA,
+                         NA)
+    df = rbindlist(list(df, df.temp))
+  }
+  
+  # df[, c("Ynb", "Mnb") := tstrsplit(variable, "_", fixed=TRUE)][]
+  df$Mnb = as.character(df$Mnb) # to align the tyoe with the dictionary
+  df[dict.months, on = "Mnb", Period := i.month.name]                        
+  df$Mnb = as.integer(df$Mnb) # return back
+  
+  df[, Period := paste0(toupper(Period), " ", stri_sub(Ynb,-2,-1))]
+  
+  
+  df.YTD = df[between(Mnb, 1, reporting.Mnb), .(Sales = sum(Sales)), by = Ynb]
+  df.YTD = df.YTD[, Change := shift(Sales, type = "lag", n = 1)]
+  df.YTD[, Change := 100*(Sales / Change - 1)]
+  
+  
+  df.FY = df[, .(Sales = sum(Sales)), by = Ynb]
+  df.FY = df.FY[, Change := shift(Sales, type = "lag", n = 1)]
+  df.FY = df.FY[Ynb == reporting.Ynb, Sales := Change * growth.rate]
+  df.FY[, Change := 100*(Sales / Change - 1)]
+  
+  
+  df.YTG = df.FY - df.YTD
+  df.YTG = df.YTG[, Change := shift(Sales, type = "lag", n = 1)]
+  df.YTG[, Change := 100*(Sales / Change - 1)]
+  
+  
+  # Modify column names
+  df = df[Ynb > (reporting.Ynb - 2)]
+  df = df[, c("Ynb", "Mnb") := NULL]
+  # setcolorder(df, c(3, 1, 2))
+  
+  df.YTD = df.YTD[!is.na(Change)]
+  df.YTD[, Period := paste0("YTD", " ", stri_sub(Ynb,-2,-1))]
+  df.YTD[, Ynb := NULL]
+  
+  df.FY = df.FY[!is.na(Change)]
+  names(df.FY)[1] = "Period"
+  df.FY$Period = as.character(df.FY$Period)
+  
+  df.YTG = df.YTG[!is.na(Change)]
+  df.YTG$Period = df.FY$Period
+  df.YTG[, Period := paste0("YTG", " ", stri_sub(Period,-2,-1))]
+  df.YTG[, Ynb := NULL]
+  
+  
+  # df = rbindlist(list(df, 
+  #                     list(".", NA, NA),
+  #                     df.YTD,
+  #                     list("..", NA, NA),
+  #                     df.YTG,
+  #                     list("...", NA, NA),
+  #                     df.FY
+  #                     ))
+  
+  
+  
+  df$Period <- factor(df$Period, levels = unique(df$Period))
+  
+  
+  df.plot = ggplot(df, 
+                   aes(y = Sales, x = Period)) + 
+    geom_col(fill = color.palette) +
+    geom_text(
+      aes(label = sprintf("%0.1f", Sales)),
+      vjust = 2,
+      show.legend = FALSE,
+      size = 3,
+      color = "white"
+      
+    ) +
+    geom_text(
+      aes(label = sprintf("%0.1f", Change)),
+      vjust = -1,
+      show.legend = FALSE,
+      size = 3
+    ) +
+    scale_y_continuous(limits = c(0, df[, max(Sales, na.rm = TRUE)]*1.1)) +
+    theme_minimal() +
+    ylab(y.title) + xlab(NULL) +
+    # labs(title = y.title) +
+    theme(
+      # legend.position = "right",
+      panel.grid.minor = element_blank(),
+      # panel.grid.major.y = element_line(linetype = "dotted", colour = "darkgrey"),
+      panel.grid.major.y = element_blank(),
+      panel.grid.major.x = element_blank(),
+      panel.background = element_blank(),
+      axis.text.y = element_blank(),
+      axis.text.x = element_text(angle = 90, hjust = 1),
+      axis.title.y = element_text(angle = 90, hjust = 0.85)
+    )
+  
+  df.YTD.plot = ggplot(df.YTD, 
+                       aes(y = Sales, x = Period)) + 
+    geom_col(fill = color.palette) +
+    geom_text(
+      aes(label = sprintf("%0.1f", Sales)),
+      vjust = 2,
+      show.legend = FALSE,
+      size = 3,
+      color = "white"
+      
+    ) +
+    geom_text(
+      aes(label = sprintf("%0.1f", Change)),
+      vjust = -1,
+      show.legend = FALSE,
+      size = 3
+    ) +
+    scale_y_continuous(limits = c(0, df.YTD[, max(Sales, na.rm = TRUE)]*1.1)) +
+    theme_minimal() +
+    ylab(NULL) + xlab(NULL) +
+    theme(
+      # legend.position = "right",
+      legend.title = element_blank(),
+      legend.text = element_text(size = 8),
+      panel.grid.minor = element_blank(),
+      # panel.grid.major.y = element_line(linetype = "dotted", colour = "darkgrey"),
+      panel.grid.major.y = element_blank(),
+      panel.grid.major.x = element_blank(),
+      panel.background = element_blank(),
+      axis.text.x = element_text(angle = 90, hjust = 1),
+      axis.text.y = element_blank()
+    )
+  
+  df.YTG.plot = ggplot(df.YTG, 
+                       aes(y = Sales, x = Period)) + 
+    geom_col(fill = color.palette) +
+    geom_text(
+      aes(label = sprintf("%0.1f", Sales)),
+      vjust = 2,
+      show.legend = FALSE,
+      size = 3,
+      color = "white"
+      
+    ) +
+    geom_text(
+      aes(label = sprintf("%0.1f", Change)),
+      vjust = -1,
+      show.legend = FALSE,
+      size = 3
+    ) +
+    scale_y_continuous(limits = c(0, df.YTG[, max(Sales, na.rm = TRUE)]*1.1)) +
+    theme_minimal() +
+    ylab(NULL) + xlab(NULL) +
+    theme(
+      # legend.position = "right",
+      legend.title = element_blank(),
+      legend.text = element_text(size = 8),
+      panel.grid.minor = element_blank(),
+      # panel.grid.major.y = element_line(linetype = "dotted", colour = "darkgrey"),
+      panel.grid.major.y = element_blank(),
+      panel.grid.major.x = element_blank(),
+      panel.background = element_blank(),
+      axis.text.x = element_text(angle = 90, hjust = 1),
+      axis.text.y = element_blank()
+    )
+  
+  df.FY.plot = ggplot(df.FY, 
+                      aes(y = Sales, x = Period)) + 
+    geom_col(fill = color.palette) +
+    geom_text(
+      aes(label = sprintf("%0.1f", Sales)),
+      vjust = 2,
+      show.legend = FALSE,
+      size = 3,
+      color = "white"
+      
+    ) +
+    geom_text(
+      aes(label = sprintf("%0.1f", Change)),
+      vjust = -1,
+      show.legend = FALSE,
+      size = 3
+    ) +
+    scale_y_continuous(limits = c(0, df.FY[, max(Sales, na.rm = TRUE)]*1.1)) +
+    theme_minimal() +
+    ylab(NULL) + xlab(NULL) +
+    theme(
+      # legend.position = "right",
+      legend.title = element_blank(),
+      legend.text = element_text(size = 8),
+      panel.grid.minor = element_blank(),
+      # panel.grid.major.y = element_line(linetype = "dotted", colour = "darkgrey"),
+      panel.grid.major.y = element_blank(),
+      panel.grid.major.x = element_blank(),
+      panel.background = element_blank(),
+      axis.text.x = element_text(angle = 90, hjust = 1),
+      axis.text.y = element_blank()
+    )
+  
+  df.plot = df.plot + df.YTD.plot + df.YTG.plot + df.FY.plot + 
+    plot_layout(ncol = 4, width = c(10, 1, 1, 1))
+  
+  return(df.plot)
+  
+}
+
 # Dictionaries
 dict.months = data.table(Mnb = as.character(1:12),
                          month.name = c("Jan", "Feb", "Mar", "Apr", "May", "Jun",
                                         "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"))
 
 dictColors = fread("/home/sergiy/Documents/Work/Nutricia/Scripts/Presentation-V2/dictColor.csv")
-dictColors = fread("d:/Temp/3/Presentation-V2-master/dictColor.csv")
+# dictColors = fread("d:/Temp/3/Presentation-V2-master/dictColor.csv")
 
 dictColors = dictColors[Color != ""]
 customColors = dictColors$Color
 names(customColors) = dictColors$Name
 
 # Dataset
-df = fread("/home/sergiy/Documents/Work/Nutricia/Rework/201908/df.corrected.csv")
-df = fread("d:/Temp/1/1/Aug/df.corrected.csv")
+df = fread("/home/sergiy/Documents/Work/Nutricia/Data/202004/df.csv")
+# df = fread("d:/Temp/1/1/Aug/df.corrected.csv")
 
 # Parameters
 brands.to.show = c("Nutrilon", "Milupa", "Malysh Istr")
 
-Month = 8
-Year = 2019
+Month = 4
+Year = 2020
 No.to.show = 6
 linesToShow = 5
+exchage.rate = 30
+
+growth.imf.volume = 0.9582
+growth.imf.value = 1.0156
+growth.foods.volume = 0.9962
+growth.foods.value = 1.0342
+
 
 df = df[(Ynb < Year) | (Ynb == Year & Mnb <= Month)]
 
@@ -334,12 +620,12 @@ extract.brands.data(df, selection, "Volume", brands.to.show)
 extract.category.data(df, selection, "Volume", FALSE)
 
 ### PRESENTATION
-ppt <- read_pptx("d:/Temp/2/1/Market Research data - pattern.pptx") 
-ppt <- read_pptx("/home/sergiy/Documents/Work/Nutricia/Scripts/Presentation-V3/Market Research data - pattern.pptx") 
-dictContent = read.csv("/home/sergiy/Documents/Work/Nutricia/Scripts/Presentation-V3/dictContent2.csv",
+# ppt <- read_pptx("d:/Temp/2/1/Market Research data - pattern.pptx") 
+ppt <- read_pptx("/home/sergiy/Documents/Work/Nutricia/Scripts/Presentation-V3/Market Research data - pattern3.pptx")
+dictContent = read.csv("/home/sergiy/Documents/Work/Nutricia/Scripts/Presentation-V3/dictContent.csv",
                        stringsAsFactors = FALSE)
 
-dictContent = read.csv("d:/Temp/2/1/dictContent2.csv", stringsAsFactors = FALSE)
+# dictContent = read.csv("d:/Temp/2/1/dictContent2.csv", stringsAsFactors = FALSE)
 
 
 setDT(dictContent)
@@ -349,6 +635,32 @@ ppt.content = fread("/home/sergiy/Documents/Work/Nutricia/Scripts/Presentation-V
 
 for (i in dictContent[, Slide]) {
   print(i)
+  
+  if (dictContent[Slide == i, Type == "Bar chart"]) {
+    ppt %>%
+      on_slide(index = i) %>%
+      ph_with_vg(
+        ggobj = build.bar.chart(df,
+                                 dictContent[Slide == i, Selection],
+                                 "Volume",
+                                 # linesToShow = linesToShow,
+                                 Year, Month,
+                                 exchage.rate,
+                                 growth.rate),
+        index = 5
+      ) %>%
+      ph_with_vg(
+        ggobj = build.bar.chart(df,
+                                 dictContent[Slide == i, Selection],
+                                 "Value",
+                                 # linesToShow = linesToShow,
+                                Year, Month,
+                                exchage.rate,
+                                growth.rate),
+        index = 4
+      )
+    
+  }
   
   if (dictContent[Slide == i, Type == "Line chart"]) {
     ppt %>%
@@ -360,7 +672,7 @@ for (i in dictContent[, Slide]) {
                                  linesToShow = linesToShow,
                                  Year, Month,
                                  dictContent[Slide == i, Excl.Malysh]),
-        index = 5
+        index = 3 #5
       ) %>%
       ph_with_vg(
         ggobj = build.line.chart(df,
@@ -369,7 +681,7 @@ for (i in dictContent[, Slide]) {
                                  linesToShow = linesToShow,
                                  Year, Month,
                                  dictContent[Slide == i, Excl.Malysh]),
-        index = 4
+        index = 5 #4
       )
     
   }
@@ -384,7 +696,7 @@ for (i in dictContent[, Slide]) {
                             brands.to.show),
         "Brand"
       ),
-      index = 2) %>%
+      index = 3) %>%
       ph_with_flextable(value = make.flextable(
         extract.brands.data(df,
                             dictContent[Slide == i, Selection],
@@ -407,7 +719,7 @@ for (i in dictContent[, Slide]) {
                               dictContent[Slide == i, Excl.Malysh]),
         "Category"
       ),
-      index = 2) %>%
+      index = 3) %>%
       ph_with_flextable(value = make.flextable(
         extract.category.data(df,
                               dictContent[Slide == i, Selection],
@@ -424,4 +736,4 @@ for (i in dictContent[, Slide]) {
 
 
 print(ppt, "/home/sergiy/Documents/Work/Nutricia/Scripts/Presentation-V3/p.pptx")
-print(ppt, "d:/Temp/2/1/p.pptx")
+# print(ppt, "d:/Temp/2/1/p.pptx")
