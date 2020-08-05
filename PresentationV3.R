@@ -247,11 +247,11 @@ build.line.chart = function(df, selection, measure, linesToShow, Year, Month, ex
   
   df = melt.data.table(df, "Company")
   
-  df[, c("Ynb", "Mnb") := tstrsplit(variable, "_", fixed=TRUE)][]
+  df[, c("Ynb", "Mnb") := tstrsplit(variable, "_", fixed=TRUE)]
   
-  df[dict.months, on = "Mnb", Period := i.month.name]                        
+  df[dict.months, on = "Mnb", Mnb := i.month.name]                
   
-  df[, Period := paste0(toupper(Period), " ", stri_sub(Ynb,-2,-1))][]
+  df[, Period := paste0(toupper(Mnb), " ", stri_sub(Ynb,-2,-1))][]
   df[Period == "NA .", Period := "."]
   df[Period == "NA ..", Period := ".."]
   
@@ -591,17 +591,17 @@ customColors = dictColors$Color
 names(customColors) = dictColors$Name
 
 # Dataset
-df = fread("/home/sergiy/Documents/Work/Nutricia/Data/202004/df.csv")
+df = fread("/home/sergiy/Documents/Work/Nutricia/Data/202005/df.csv")
 # df = fread("d:/Temp/1/1/Aug/df.corrected.csv")
 
 # Parameters
 brands.to.show = c("Nutrilon", "Milupa", "Malysh Istr")
 
-Month = 4
+Month = 5
 Year = 2020
 No.to.show = 6
 linesToShow = 5
-exchage.rate = 30
+exchage.rate = 27.43
 
 growth.imf.volume = 0.9582
 growth.imf.value = 1.0156
@@ -631,7 +631,7 @@ dictContent = read.csv("/home/sergiy/Documents/Work/Nutricia/Scripts/Presentatio
 setDT(dictContent)
 # Slide 4
 
-ppt.content = fread("/home/sergiy/Documents/Work/Nutricia/Scripts/Presentation-V3/dictContent2.csv", stringsAsFactors = FALSE)
+# ppt.content = fread("/home/sergiy/Documents/Work/Nutricia/Scripts/Presentation-V3/dictContent2.csv", stringsAsFactors = FALSE)
 
 for (i in dictContent[, Slide]) {
   print(i)
@@ -735,5 +735,5 @@ for (i in dictContent[, Slide]) {
 
 
 
-print(ppt, "/home/sergiy/Documents/Work/Nutricia/Scripts/Presentation-V3/p.pptx")
+print(ppt, "/home/sergiy/Documents/Work/Nutricia/Scripts/Presentation-V3/Market Research Data May20.pptx")
 # print(ppt, "d:/Temp/2/1/p.pptx")
