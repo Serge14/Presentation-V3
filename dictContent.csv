@@ -1,0 +1,10 @@
+Slide,Type,Excl.Malysh,Selection
+2,Bar chart,FALSE,"Form != ""Liquid"" & (PS0 == ""IMF"" | PS2 == ""Dry Food"" | PS3 == ""Savoury Meal"" | PS3 == ""Fruits"")"
+3,Bar chart,FALSE,"Form != ""Liquid"" & PS0 == ""IMF"""
+4,Line chart,FALSE,"Form != ""Liquid"" & (PS0 == ""IMF"" | PS2 == ""Dry Food"" | PS3 == ""Savoury Meal"" | PS3 == ""Fruits"")"
+5,Line chart,FALSE,"Form != ""Liquid"" & PS0 == ""IMF"""
+6,Line chart,TRUE,"Form != ""Liquid"" & PS0 == ""IMF"""
+7,Brands,FALSE,"Form != ""Liquid"" & (PS0 == ""IMF"" | PS2 == ""Dry Food"" | PS3 == ""Savoury Meal"" | PS3 == ""Fruits"")"
+8,Brands,FALSE,"Form != ""Liquid"" & PS0 == ""IMF"""
+9,Categories,FALSE,"Form != ""Liquid"" & (PS0 == ""IMF"" | PS2 == ""Dry Food"" | PS3 == ""Savoury Meal"" | PS3 == ""Fruits"")"
+10,Categories,TRUE,"Form != ""Liquid"" & (PS0 == ""IMF"" | PS2 == ""Dry Food"" | PS3 == ""Savoury Meal"" | PS3 == ""Fruits"")"
